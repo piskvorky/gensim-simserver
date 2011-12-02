@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 #
 # Copyright (C) 2011 Radim Rehurek <radimrehurek@seznam.cz>
+# Licensed under the GNU AGPL v3 - http://www.gnu.org/licenses/agpl.html
 
 
 """

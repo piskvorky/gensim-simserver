@@ -28,8 +28,8 @@ def read(fname):
 
 setup(
     name = 'simserver',
-    version = '0.1.0',
-    description = 'Document similarity server extension for gensim',
+    version = '0.1.1',
+    description = 'Document similarity server',
     long_description = read('README.rst'),
 
     packages = find_packages(),
@@ -38,13 +38,13 @@ setup(
     author = 'Radim Rehurek', # u'Radim Řehůřek', # <- should really be this...
     author_email = 'radimrehurek@seznam.cz',
 
-    url = 'http://radimrehurek.com/simserver',
+    url = 'http://radimrehurek.com/gensim/simserver.html',
     download_url = 'http://pypi.python.org/pypi/simserver',
 
     keywords = 'Similarity server, document database, Latent Semantic Indexing, LSA, '
-    'LSI, LDA, Latent Dirichlet Allocation, TF-IDF',
+    'LSI, LDA, Latent Dirichlet Allocation, TF-IDF, gensim',
 
-    license = 'AGPL',
+    license = 'AGPL v3',
     platforms = 'any',
 
     zip_safe = False,
@@ -66,7 +66,7 @@ setup(
     install_requires = [
         'gensim >= 0.8.2',
         'Pyro4 >= 4.8',
-        'sqlitedict >= 1.0.7',
+        'sqlitedict >= 1.0.8',
     ],
 
     include_package_data = True,
