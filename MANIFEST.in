@@ -1,0 +1,10 @@
+recursive-include docs *
+recursive-include simserver/test/test_data *
+recursive-include . *.sh
+prune docs/src*
+include README.rst
+include CHANGELOG.txt
+include COPYING
+include COPYING.LESSER
+include LICENSE.txt
+include ez_setup.py
