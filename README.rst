@@ -37,9 +37,9 @@ Licensing
 Simserver is released under the `GNU Affero GPL license v3 <http://www.gnu.org/licenses/agpl.html>`_.
 
 This means you may use simserver freely in your application (even commercial application!),
-but you **must then open-source that application as well**, under an AGPL-compatible license.
+but you **must then open-source your application as well**, under an AGPL-compatible license.
 
-The AGPL license makes sure that this applies even when  you make your application
+The AGPL license makes sure that this applies even when you make your application
 available only remotely (such as through the web).
 
 TL;DR: **simserver is open-source, but you have to contact me for any proprietary use.**
