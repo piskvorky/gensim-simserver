@@ -28,7 +28,7 @@ def read(fname):
 
 setup(
     name = 'simserver',
-    version = '0.1.1',
+    version = '0.1.2',
     description = 'Document similarity server',
     long_description = read('README.rst'),
 
