@@ -60,11 +60,14 @@ class SessionServerTester(unittest.TestCase):
 
     def tearDown(self):
         self.docs = None
+        self.server.terminate()
         try:
+            # if server is remote, just close the proxy connection
             self.server._pyroRelease()
         except AttributeError:
             try:
-                shutil.rmtree(self.server.basedir)
+                # for local server, close & remove all files
+                self.server.terminate()
             except:
                 pass
 

@@ -46,7 +46,7 @@ LSI_TOPICS = 400
 TOP_SIMS = 100 # when precomputing similarities, only consider this many "most similar" documents
 SHARD_SIZE = 65536 # spill index shards to disk in SHARD_SIZE-ed chunks of documents
 
-
+JOURNAL_MODE = 'OFF' # don't keep journals in sqlite dbs
 
 def merge_sims(oldsims, newsims, clip=TOP_SIMS):
     """Merge two precomputed similarity lists, truncating the result to `clip` most similar items."""
@@ -76,7 +76,7 @@ class SimIndex(gensim.utils.SaveLoad):
         self.topsims = int(topsims)
         self.id2pos = {} # map document id (string) to index position (integer)
         self.pos2id = {} # reverse mapping for id2pos; redundant, for performance
-        self.id2sims = SqliteDict(self.fname + '.id2sims') # precomputed top similar: document id -> [(doc_id, similarity)]
+        self.id2sims = SqliteDict(self.fname + '.id2sims', journal_mode=JOURNAL_MODE) # precomputed top similar: document id -> [(doc_id, similarity)]
         self.qindex = gensim.similarities.Similarity(self.fname + '.idx', corpus=None,
             num_best=None, num_features=num_features, shardsize=shardsize)
         self.length = 0
@@ -91,7 +91,7 @@ class SimIndex(gensim.utils.SaveLoad):
     def load(fname):
         result = gensim.utils.SaveLoad.load(fname)
         result.check_moved(fname)
-        result.id2sims = SqliteDict(result.fname + '.id2sims')
+        result.id2sims = SqliteDict(result.fname + '.id2sims', journal_mode=JOURNAL_MODE)
         return result
 
 
@@ -114,6 +114,10 @@ class SimIndex(gensim.utils.SaveLoad):
 
     def terminate(self):
         """Delete all files created by this index, invalidating `self`. Use with care."""
+        try:
+            self.id2sims.terminate()
+        except:
+            pass
         import glob
         for fname in glob.glob(self.fname + '*'):
             try:
@@ -350,6 +354,9 @@ class SimModel(gensim.utils.SaveLoad):
         bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
         return self.lsi[self.tfidf[bows]]
 
+    def close(self):
+        """Release important resources manually."""
+        pass
 
     def __str__(self):
         return "SimModel(method=%s, dict=%s)" % (self.method, self.dictionary)
@@ -395,7 +402,7 @@ class SimServer(object):
             self.model = SimModel.load(self.location('model'))
         except:
             self.model = None
-        self.payload = SqliteDict(self.location('payload'), autocommit=True)
+        self.payload = SqliteDict(self.location('payload'), autocommit=True, journal_mode=JOURNAL_MODE)
         # save the opened objects right back. this is not necessary and costs extra
         # time, but is cleaner when there are server location changes (see `check_moved`).
         self.flush(save_index=True, save_model=True, clear_buffer=True)
@@ -424,9 +431,24 @@ class SimServer(object):
                     self.fresh_docs.terminate() # erase all buffered documents + file on disk
                 except:
                     pass
-            self.fresh_docs = SqliteDict() # buffer defaults to a random location in temp
+            self.fresh_docs = SqliteDict(journal_mode=JOURNAL_MODE) # buffer defaults to a random location in temp
         self.fresh_docs.sync()
 
+
+    def close(self):
+        """Explicitly close open file handles, databases etc."""
+        try:
+            self.payload.close()
+        except:
+            pass
+        try:
+            self.fresh_docs.terminate()
+        except:
+            pass
+
+    def __del__(self):
+        """When the server went out of scope, make an effort to close its DBs."""
+        self.close()
 
     @gensim.utils.synchronous('lock_update')
     def buffer(self, documents):
@@ -554,6 +576,7 @@ class SimServer(object):
                 index.terminate()
         self.fresh_index, self.opt_index = None, None
         if not keep_model and self.model is not None:
+            self.model.close()
             fname = self.location('model')
             try:
                 os.remove(fname)
@@ -659,14 +682,14 @@ class SessionServer(gensim.utils.SaveLoad):
     Similarity server on top of :class:`SimServer` that implements sessions = transactions.
 
     A transaction is a set of server modifications (index/delete/train calls) that
-    may be either commited or rolled back entirely.
+    may be either committed or rolled back entirely.
 
     Sessions are realized by:
 
     1. cloning (=copying) a SimServer at the beginning of a session
     2. serving read-only queries from the original server (the clone may be modified during queries)
     3. modifications affect only the clone
-    4. at commit, the clone and the original are switched
+    4. at commit, the clone becomes the original
     5. at rollback, do nothing (clone is discarded, next transaction starts from the original again)
     """
     def __init__(self, basedir, autosession=True):
@@ -815,9 +838,11 @@ class SessionServer(gensim.utils.SaveLoad):
         """Commit changes made by the latest session."""
         if self.session is not None:
             logger.info("committing transaction in %s" % self)
+            tmp = self.stable
             self.stable, self.session = self.session, None
             self.istable = 1 - self.istable
             self.write_istable()
+            tmp.close() # don't wait for gc, release resources manually
             self.lock_update.release()
         else:
             logger.warning("commit called but there's no open session in %s" % self)
@@ -827,6 +852,7 @@ class SessionServer(gensim.utils.SaveLoad):
         """Ignore all changes made in the latest session (terminate the session)."""
         if self.session is not None:
             logger.info("rolling back transaction in %s" % self)
+            self.session.close()
             self.session = None
             self.lock_update.release()
         else:
@@ -844,9 +870,25 @@ class SessionServer(gensim.utils.SaveLoad):
         return self.autosession
 
     @gensim.utils.synchronous('lock_update')
+    def close(self):
+        """Don't wait for gc, try to release important resources manually"""
+        try:
+            self.stable.close()
+        except:
+            pass
+        try:
+            self.session.close()
+        except:
+            pass
+
+    def __del__(self):
+        self.close()
+
+    @gensim.utils.synchronous('lock_update')
     def terminate(self):
         """Delete all files created by this server, invalidating `self`. Use with care."""
         logger.info("deleting entire server %s" % self)
+        self.close()
         try:
             shutil.rmtree(self.basedir)
             logger.info("deleted server under %s" % self.basedir)
@@ -858,7 +900,7 @@ class SessionServer(gensim.utils.SaveLoad):
                 except:
                     pass
         except Exception, e:
-            logger.warning("failed to delete %s: %s" % (fname, e))
+            logger.warning("failed to delete SessionServer: %s" % (e))
 
 
     def find_similar(self, *args, **kwargs):
