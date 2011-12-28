@@ -1,5 +1,5 @@
 ==================================================
-simserver -- Document similarity server in Python
+simserver -- document similarity server in Python
 ==================================================
 
 
@@ -43,6 +43,13 @@ The AGPL license makes sure that this applies even when you make your applicatio
 available only remotely (such as through the web).
 
 TL;DR: **simserver is open-source, but you have to contact me for any proprietary use.**
+
+History
+-------------
+
+0.1.3: 
+  * changed behaviour for very few training documents: instead of latent semantic analysis, use simpler log-entropy model
+  * fixed bug with leaking SQLite file descriptors
 
 -------------
 

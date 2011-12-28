@@ -28,7 +28,7 @@ def read(fname):
 
 setup(
     name = 'simserver',
-    version = '0.1.2',
+    version = '0.1.3',
     description = 'Document similarity server',
     long_description = read('README.rst'),
 
@@ -38,7 +38,7 @@ setup(
     author = 'Radim Rehurek', # u'Radim Řehůřek', # <- should really be this...
     author_email = 'radimrehurek@seznam.cz',
 
-    url = 'http://radimrehurek.com/gensim/simserver.html',
+    url = 'https://github.com/piskvorky/gensim-simserver',
     download_url = 'http://pypi.python.org/pypi/simserver',
 
     keywords = 'Similarity server, document database, Latent Semantic Indexing, LSA, '
@@ -64,7 +64,7 @@ setup(
     test_suite = "simserver.test",
 
     install_requires = [
-        'gensim >= 0.8.2',
+        'gensim >= 0.8.3',
         'Pyro4 >= 4.8',
         'sqlitedict >= 1.0.8',
     ],
