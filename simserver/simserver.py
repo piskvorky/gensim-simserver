@@ -113,6 +113,18 @@ class SimIndex(gensim.utils.SaveLoad):
             self.qindex.output_prefix = output_prefix
 
 
+    def close(self):
+        "Explicitly release important resources (file handles, db, ...)"
+        try:
+            self.id2sims.close()
+        except:
+            pass
+        try:
+            del self.qindex
+        except:
+            pass
+
+
     def terminate(self):
         """Delete all files created by this index, invalidating `self`. Use with care."""
         try:
@@ -440,6 +452,18 @@ class SimServer(object):
         """Explicitly close open file handles, databases etc."""
         try:
             self.payload.close()
+        except:
+            pass
+        try:
+            self.model.close()
+        except:
+            pass
+        try:
+            self.fresh_index.close()
+        except:
+            pass
+        try:
+            self.opt_index.close()
         except:
             pass
         try:
