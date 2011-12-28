@@ -11,7 +11,7 @@ Automated tests for checking similarity server.
 from __future__ import with_statement
 
 import logging
-import shutil
+import sys
 import unittest
 from copy import deepcopy
 
@@ -53,7 +53,7 @@ class SessionServerTester(unittest.TestCase):
         try:
             self.server = Pyro4.Proxy('PYRONAME:gensim.testserver')
             logger.info(self.server.status())
-        except Exception, e:
+        except Exception:
             logger.info("could not locate running SessionServer; starting a local server")
             self.server = simserver.SessionServer(gensim.utils.randfname())
         self.server.set_autosession(True)
@@ -100,13 +100,13 @@ class SessionServerTester(unittest.TestCase):
 
         # check that the model was trained correctly
         model = self.server.debug_model()
-        s_values = [1.56162356, 1.39524723, 1.19488823, 1.11727727, 0.89581808,
-                    0.74147441, 0.58769924, 0.39076217, 0.29696942]
+        s_values = [1.2704573, 1.13604315, 1.07827574, 1.02963433, 0.97147057,
+                    0.9280468, 0.90321329, 0.83034548, 0.74981662]
         self.assertTrue(numpy.allclose(model.lsi.projection.s, s_values))
 
-        vec0 = [(0, 0.26138668665606807), (1, -0.42474077827458095), (2, -0.37640944196377213),
-                (3, 0.24878004604588472), (4, 0.7086623323932405), (5, 0.19319654259273622),
-                (6, 0.080054458473849122), (7, 0.018944932880293794), (8, -0.037441525599206708)]
+        vec0 = [(0, -0.27759625943508104), (1, -0.29736164713214469), (2, 0.14768134319504395),
+                (3, -0.24586351025187975), (4, 0.8359357384389362), (5, 0.084659319019917578),
+                (6, -0.2042204354844826), (7, -0.016382387104491858), (8, 0.065784642613330224)]
         got = model.doc2vec(self.docs[0])
         self.assertTrue(numpy.allclose(abs(gensim.matutils.sparse2full(vec0, model.num_features)),
                                        abs(gensim.matutils.sparse2full(got, model.num_features))))
@@ -129,15 +129,15 @@ class SessionServerTester(unittest.TestCase):
         self.server.index() # index uploaded documents & clear upload buffer
         self.assertRaises(ValueError, self.server.find_similar, 'fakeid') # no such id -> raises ValueError
 
-        expected =  [('en__1', 0.99999994), ('en__0', 0.25648531), ('en__2', 0.24981415)]
+        expected = [('en__1', 0.99999994), ('en__2', 0.16279206), ('en__0', 0.09881371)]
         got = self.server.find_similar(self.docs[1]['id']) # retrieve similar to the last document
         self.check_equal(expected, got)
 
         self.server.index(self.docs[3:]) # upload & index the rest of the documents
         logger.debug(self.server.status())
-        expected =  [('en__1', 0.99999994), ('en__4', 0.70710671), ('en__8', 0.27910081),
-                     ('en__0', 0.25648531), ('en__2', 0.24981415), ('en__3', 0.20920435),
-                     ('en__7', 2.9802322e-08), ('en__6', 2.9802322e-08), ('en__5', 1.4901161e-08)]
+        expected = [('en__1', 0.99999994), ('en__4', 0.2686055), ('en__8', 0.229533),
+                    ('en__2', 0.16279206), ('en__3', 0.143899247), ('en__0', 0.09881371),
+                    ('en__6', 0.018686194), ('en__5', 0.017070908), ('en__7', 0.01428914)]
         got = self.server.find_similar(self.docs[1]['id']) # retrieve similar to the last document
         self.check_equal(expected, got)
 
@@ -147,9 +147,9 @@ class SessionServerTester(unittest.TestCase):
         docs[2]['tokens'] = docs[1]['tokens'] # different text, same id
         self.server.index(docs[1:3]) # reindex the two modified docs -- total number of indexed docs doesn't change
         logger.debug(self.server.status())
-        expected = [('en__2', 0.99999994), ('en__1', 0.99999994), ('en__4', 0.70710671),
-                    ('en__8', 0.27910081), ('en__0', 0.25648531), ('en__3', 0.20920435),
-                    ('en__7', 2.9802322e-08), ('en__6', 2.9802322e-08), ('en__5', 1.4901161e-08)]
+        expected = [('en__2', 0.99999994), ('en__1', 0.99999994), ('en__4', 0.26860553),
+                    ('en__8', 0.229533046), ('en__3', 0.143899247), ('en__0', 0.0988137126),
+                    ('en__6', 0.01868619397), ('en__5', 0.0170709081), ('en__7', 0.0142891407)]
         got = self.server.find_similar(self.docs[2]['id'])
         self.check_equal(expected, got)
 
@@ -157,8 +157,8 @@ class SessionServerTester(unittest.TestCase):
         to_delete = [doc['id'] for doc in self.docs[-3:]]
         self.server.delete(to_delete) # delete the last 3 documents
         logger.debug(self.server.status())
-        expected = [('en__2', 0.99999994), ('en__1', 0.99999994), ('en__4', 0.70710671),
-                    ('en__0', 0.25648531), ('en__3', 0.20920435), ('en__5', 1.4901161e-08)]
+        expected = [('en__2', 0.99999994), ('en__1', 0.99999994), ('en__4', 0.26860553),
+                    ('en__3', 0.143899247), ('en__0', 0.09881371), ('en__5', 0.017070908)]
         got = self.server.find_similar(self.docs[2]['id'])
         self.check_equal(expected, got)
         self.assertRaises(ValueError, self.server.find_similar, to_delete[0]) # deleted document not there anymore
@@ -170,7 +170,7 @@ class SessionServerTester(unittest.TestCase):
         # and store them to Sqlite db for lightning-fast querying.
         # querying by fulltext is not affected by this optimization, though.
         self.server.drop_index(keep_model=False)
-        self.server.train(self.docs)
+        self.server.train(self.docs, method='lsi')
         self.server.index(self.docs)
         self.server.optimize()
         logger.debug(self.server.status())
@@ -185,19 +185,19 @@ class SessionServerTester(unittest.TestCase):
 
         # query index by id: return the most similar documents to an already indexed document
         docid = self.docs[0]['id']
-        expected = [('en__0', 1.0), ('en__2', 0.30426699), ('en__1', 0.25648531),
-                    ('en__3', 0.25480536), ('en__4', 5.9604645e-08), ('en__7', 2.2351742e-08)]
+        expected = [('en__0', 1.0), ('en__2', 0.112942614), ('en__1', 0.09881371),
+                    ('en__3', 0.087866522)]
         got = self.server.find_similar(docid)
         self.check_equal(expected, got)
 
         # same thing, but only get docs with similarity >= 0.3
-        expected = [('en__0', 1.0), ('en__2', 0.30426699)]
+        expected = [('en__0', 1.0)]
         got = self.server.find_similar(docid, min_score=0.3)
         self.check_equal(expected, got)
 
         # same thing, but only get max 3 documents docs with similarity >= 0.2
-        expected = [('en__0', 1.0), ('en__2', 0.30426699), ('en__1', 0.25648531)]
-        got = self.server.find_similar(docid, max_results=3, min_score=0.2)
+        expected = [('en__0', 1.0), ('en__2', 0.112942614)]
+        got = self.server.find_similar(docid, max_results=3, min_score=0.1)
         self.check_equal(expected, got)
 
 
@@ -210,19 +210,18 @@ class SessionServerTester(unittest.TestCase):
         # query index by document text: id is ignored
         doc = self.docs[0]
         doc['id'] = None # clear out id; not necessary, just to demonstrate it's not used in query-by-document
-        expected = [('en__0', 1.0), ('en__2', 0.30426699), ('en__1', 0.25648531),
-                    ('en__3', 0.25480536), ('en__4', 5.9604645e-08), ('en__7', 2.2351742e-08)]
+        expected = [('en__0', 1.0), ('en__2', 0.11294261), ('en__1', 0.09881371), ('en__3', 0.087866522)]
         got = self.server.find_similar(doc)
         self.check_equal(expected, got)
 
         # same thing, but only get docs with similarity >= 0.3
-        expected = [('en__0', 1.0), ('en__2', 0.30426699)]
+        expected =  [('en__0', 1.0)]
         got = self.server.find_similar(doc, min_score=0.3)
         self.check_equal(expected, got)
 
         # same thing, but only get max 3 documents docs with similarity >= 0.2
-        expected = [('en__0', 1.0), ('en__2', 0.30426699), ('en__1', 0.25648531)]
-        got = self.server.find_similar(doc, max_results=3, min_score=0.2)
+        expected =  [('en__0', 1.0), ('en__2', 0.112942614)]
+        got = self.server.find_similar(doc, max_results=3, min_score=0.1)
         self.check_equal(expected, got)
 
 
@@ -254,12 +253,12 @@ class SessionServerTester(unittest.TestCase):
         self.server.set_autosession(False) # turn off auto-commit
 
         # trying to modify index with auto-commit off and without an open session results in exception
-        self.assertRaises(RuntimeError, self.server.train, self.docs)
+        self.assertRaises(RuntimeError, self.server.train, self.docs, method='lsi')
         self.assertRaises(RuntimeError, self.server.index, self.docs)
 
         # open session, train model & index some documents
         self.server.open_session()
-        self.server.train(self.docs)
+        self.server.train(self.docs, method='lsi')
         self.server.index(self.docs)
 
         # cannot open 2 simultaneous sessions: must commit or rollback first

@@ -337,7 +337,7 @@ class SimModel(gensim.utils.SaveLoad):
                 self.dictionary.filter_extremes(no_below=5, no_above=0.2, keep_n=50000)
             else:
                 logger.warning("training model on only %i documents; is this intentional?" % len(docids))
-                self.dictionary.filter_extremes(no_below=2, no_above=0.5, keep_n=50000)
+                self.dictionary.filter_extremes(no_below=0, no_above=1.0, keep_n=50000)
         else:
             self.dictionary = dictionary
         corpus = lambda: (self.dictionary.doc2bow(tokens) for tokens in preprocessed())
@@ -349,6 +349,10 @@ class SimModel(gensim.utils.SaveLoad):
             self.lsi = gensim.models.LsiModel(tfidf_corpus, id2word=self.dictionary, num_topics=LSI_TOPICS)
             self.lsi.projection.u = self.lsi.projection.u.astype(numpy.float32) # use single precision to save mem
             self.num_features = len(self.lsi.projection.s)
+        elif method == 'logentropy':
+            logger.info("training a log-entropy model")
+            self.logent = gensim.models.LogEntropyModel(corpus(), id2word=self.dictionary)
+            self.num_features = len(self.dictionary)
         else:
             msg = "unknown semantic method %s" % method
             logger.error(msg)
@@ -357,15 +361,23 @@ class SimModel(gensim.utils.SaveLoad):
 
     def doc2vec(self, doc):
         """Convert a single SimilarityDocument to vector."""
-        # FIXME take self.method into account!
-        bow = self.dictionary.doc2bow(doc['tokens'])
-        return self.lsi[self.tfidf[bow]]
+        if self.method == 'lsi':
+            bow = self.dictionary.doc2bow(doc['tokens'])
+            return self.lsi[self.tfidf[bow]]
+        elif self.method == 'logentropy':
+            bow = self.dictionary.doc2bow(doc['tokens'])
+            return self.logent[bow]
 
 
     def docs2vecs(self, docs):
         """Convert multiple SimilarityDocuments to vectors (batch version of doc2vec)."""
-        bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
-        return self.lsi[self.tfidf[bows]]
+        if self.method == 'lsi':
+            bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
+            return self.lsi[self.tfidf[bows]]
+        elif self.method == 'logentropy':
+            bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
+            return self.logent[bows]
+
 
     def close(self):
         """Release important resources manually."""
@@ -502,7 +514,7 @@ class SimServer(object):
 
 
     @gensim.utils.synchronous('lock_update')
-    def train(self, corpus=None, method='lsi', clear_buffer=True):
+    def train(self, corpus=None, method='auto', clear_buffer=True):
         """
         Create an indexing model. Will overwrite the model if it already exists.
         All indexes become invalid, because documents in them use a now-obsolete
@@ -519,6 +531,13 @@ class SimServer(object):
             msg = "train called but no training corpus specified for %s" % self
             logger.error(msg)
             raise ValueError(msg)
+        if method == 'auto':
+            numdocs = len(self.fresh_docs)
+            if numdocs < 1000:
+                logging.warning("too few training documents; using simple log-entropy model instead of latent semantic indexing")
+                method = 'logentropy'
+            else:
+                method = 'lsi'
         self.model = SimModel(self.fresh_docs, method=method)
         self.flush(save_model=True, clear_buffer=clear_buffer)
 
