@@ -3,9 +3,11 @@
 Document Similarity Server
 =============================
 
-
 The 0.7.x series of `gensim <http://radimrehurek.com/gensim/>`_ was about improving performance and consolidating API.
 0.8.x will be about new features --- 0.8.1, first of the series, is a **document similarity service**.
+
+The source code itself has been moved from gensim to its own, dedicated package, named `simserver`.
+Get it from `PyPI <http://pypi.python.org/pypi/simserver>`_ or clone it on `Github <https://github.com/piskvorky/gensim-simserver>`_.
 
 What is a document similarity service?
 ---------------------------------------
@@ -239,10 +241,10 @@ service access via Pyro. Pyro takes care of all the socket listening/request rou
 spawning, so it saves us a lot of trouble.
 
 To create a similarity server, we just create a :class:`simserver.SessionServer` object and register it
-with a Pyro daemon for remote access. There is a small `example script <https://github.com/piskvorky/gensim/blob/simserver/gensim/test/run_simserver.py>`_
-included with gensim, run it with::
+with a Pyro daemon for remote access. There is a small `example script <https://github.com/piskvorky/gensim-simserver/blob/master/simserver/run_simserver.py>`_
+included with simserver, run it with::
 
-  $ python -m gensim.test.run_simserver /tmp/testserver
+  $ python -m simserver.run_simserver /tmp/testserver
 
 You can just `ctrl+c` to terminate the server, but leave it running for now.
 
@@ -324,5 +326,5 @@ Other stuff
 ------------
 
 TODO Custom document parsing (in lieu of `utils.simple_preprocess`). Different models (not just `lsi`). Optimizing the index with `service.optimize()`.
-TODO add some hard numbers; example tutorial for some bigger collection, e.g. arxiv.org or wikipedia.
+TODO add some hard numbers; example tutorial for some bigger collection, e.g. for `arxiv.org <http://aura.fi.muni.cz:8080/>`_ or wikipedia.
 
