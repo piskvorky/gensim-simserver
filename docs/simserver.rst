@@ -17,7 +17,7 @@ Conceptually, a service that lets you :
 3. query the index for similar documents (the query can be either an id of a document already in the index, or an arbitrary text)
 
 
->>> from gensim.similarities.simserver import SessionServer
+>>> from simserver import SessionServer
 >>> server = SessionServer('/tmp/my_server') # resume server (or create a new one)
 
 >>> server.train(training_corpus, method='lsi') # create a semantic model
@@ -130,7 +130,7 @@ recommended client splits them into smaller chunks before uploading them to the 
 Wait, upload what, where?
 -------------------------
 
-If you use the similarity service object (instance of :class:`gensim.similarities.simserver.SessionServer`) in
+If you use the similarity service object (instance of :class:`simserver.SessionServer`) in
 your code directly---no remote access---that's perfectly fine. Using the service remotely, from a different process/machine, is an
 option, not a necessity.
 
@@ -140,7 +140,7 @@ case, I'll call the service object a *server*.
 But let's start with a local object. Open your `favourite shell <http://ipython.org/>`_ and::
 
 >>> from gensim import utils
->>> from gensim.similarities.simserver import SessionServer
+>>> from simserver import SessionServer
 >>> service = SessionServer('/tmp/my_server/') # or wherever
 
 That initialized a new service, located in `/tmp/my_server` (you need write access rights to that directory).
@@ -238,7 +238,7 @@ a pure Python package for Remote Procedure Calls (RPC), so I'll illustrate remot
 service access via Pyro. Pyro takes care of all the socket listening/request routing/data marshalling/thread
 spawning, so it saves us a lot of trouble.
 
-To create a similarity server, we just create a :class:`gensim.similarities.simserver.SessionServer` object and register it
+To create a similarity server, we just create a :class:`simserver.SessionServer` object and register it
 with a Pyro daemon for remote access. There is a small `example script <https://github.com/piskvorky/gensim/blob/simserver/gensim/test/run_simserver.py>`_
 included with gensim, run it with::
 
