@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2011 Radim Rehurek <radimrehurek@seznam.cz>
+# Copyright (C) 2012 Radim Rehurek <radimrehurek@seznam.cz>
 # Licensed under the GNU AGPL v3 - http://www.gnu.org/licenses/agpl.html
 
 
@@ -27,7 +27,6 @@ from __future__ import with_statement
 
 import os
 import logging
-import random
 import threading
 import shutil
 
@@ -222,6 +221,12 @@ class SimIndex(gensim.utils.SaveLoad):
         return result
 
 
+    def vec_by_id(self, docid):
+        """Return indexed vector corresponding to document `docid`."""
+        pos = self.id2pos[docid]
+        return self.qindex.vector_by_id(pos)
+
+
     def sims_by_id(self, docid):
         """Find the most similar documents to the (already indexed) document with `docid`."""
         result = self.id2sims.get(docid, None)
@@ -231,15 +236,15 @@ class SimIndex(gensim.utils.SaveLoad):
         return result
 
 
-    def sims_by_doc(self, doc, model):
+    def sims_by_vec(self, vec, normalize=None):
         """
-        Find the most similar documents to a fulltext document.
-
-        The document is first processed (tokenized etc) and converted to a vector
-        in the same way the training documents were, during `train()`.
+        Find the most similar documents to a given vector (=already processed document).
         """
-        vec = model.doc2vec(doc) # convert document (text) to vector
-        sims = self.qindex[vec] # query the index
+        if normalize is None:
+            normalize = self.qindex.normalize
+        norm, self.qindex.normalize = self.qindex.normalize, normalize # store old value
+        sims = self.qindex[vec]
+        self.qindex.normalize = norm # restore old value of qindex.normalize
         return self.sims2scores(sims)
 
 
@@ -606,7 +611,8 @@ class SimServer(object):
             self.opt_index = SimIndex(self.location('index_opt'), self.model.num_features)
 
         self.opt_index.merge(self.fresh_index)
-        self.fresh_index = self.fresh_index.terminate() # delete old files
+        self.fresh_index.terminate() # delete old files
+        self.fresh_index = None
         self.flush(save_index=True)
 
 
@@ -668,16 +674,23 @@ class SimServer(object):
             docid = doc
             if self.opt_index is not None and docid in self.opt_index:
                 sims_opt = self.opt_index.sims_by_id(docid)
-            if self.fresh_index is not None and docid in self.fresh_index:
+                if self.fresh_index is not None:
+                    vec = self.opt_index.vec_by_id(docid)
+                    sims_fresh = self.fresh_index.sims_by_vec(vec, normalize=False)
+            elif self.fresh_index is not None and docid in self.fresh_index:
                 sims_fresh = self.fresh_index.sims_by_id(docid)
-            if sims_fresh is None and sims_opt is None:
+                if self.opt_index is not None:
+                    vec = self.fresh_index.vec_by_id(docid)
+                    sims_opt = self.opt_index.sims_by_vec(vec, normalize=False)
+            else:
                 raise ValueError("document %r not in index" % docid)
         else:
             # query by an arbitrary text (=tokens) inside doc['tokens']
+            vec = self.model.doc2vec(doc) # convert document (text) to vector
             if self.opt_index is not None:
-                sims_opt = self.opt_index.sims_by_doc(doc, self.model)
+                sims_opt = self.opt_index.sims_by_vec(vec)
             if self.fresh_index is not None:
-                sims_fresh = self.fresh_index.sims_by_doc(doc, self.model)
+                sims_fresh = self.fresh_index.sims_by_vec(vec)
 
         result = []
         for docid, score in merge_sims(sims_opt, sims_fresh):
