@@ -356,7 +356,7 @@ class SimModel(gensim.utils.SaveLoad):
             self.num_features = len(self.lsi.projection.s)
         elif method == 'logentropy':
             logger.info("training a log-entropy model")
-            self.logent = gensim.models.LogEntropyModel(corpus(), id2word=self.dictionary)
+            self.logent = gensim.models.LogEntropyModel(list(corpus()), id2word=self.dictionary)
             self.num_features = len(self.dictionary)
         else:
             msg = "unknown semantic method %s" % method
@@ -408,7 +408,7 @@ class SimServer(object):
     processes is safe for reading = answering similarity queries. Modifying
     (training/indexing) is realized via locking = serialized internally.
     """
-    def __init__(self, basename):
+    def __init__(self, basename, use_locks=True):
         """
         All data will be stored under directory `basename`. If there is a server
         there already, it will be loaded (resumed).
@@ -419,7 +419,7 @@ class SimServer(object):
         if not os.path.isdir(basename):
             raise ValueError("%r must be a writable directory" % basename)
         self.basename = basename
-        self.lock_update = threading.RLock() # only one thread can modify the server at a time
+        self.lock_update = threading.RLock() if use_locks else gensim.utils.nocm
         try:
             self.fresh_index = SimIndex.load(self.location('index_fresh'))
         except:
@@ -749,10 +749,11 @@ class SessionServer(gensim.utils.SaveLoad):
     4. at commit, the clone becomes the original
     5. at rollback, do nothing (clone is discarded, next transaction starts from the original again)
     """
-    def __init__(self, basedir, autosession=True):
+    def __init__(self, basedir, autosession=True, use_locks=True):
         self.basedir = basedir
         self.autosession = autosession
-        self.lock_update = threading.RLock()
+        self.use_locks = use_locks
+        self.lock_update = threading.RLock() if use_locks else gensim.utils.nocm
         self.locs = ['a', 'b'] # directories under which to store stable.session data
         try:
             stable = open(self.location('stable')).read().strip()
@@ -766,7 +767,7 @@ class SessionServer(gensim.utils.SaveLoad):
         except:
             pass
         self.write_istable()
-        self.stable = SimServer(self.loc_stable)
+        self.stable = SimServer(self.loc_stable, use_locks=self.use_locks)
         self.session = None
 
 
@@ -830,8 +831,8 @@ class SessionServer(gensim.utils.SaveLoad):
         logger.info("cloning server from %s to %s" %
                     (self.loc_stable, self.loc_session))
         shutil.copytree(self.loc_stable, self.loc_session)
-        self.session = SimServer(self.loc_session)
-        self.lock_update.acquire() # no other thread can call any modification methods until commit/rollback
+        self.session = SimServer(self.loc_session, use_locks=self.use_locks)
+        #self.lock_update.acquire() # no other thread can call any modification methods until commit/rollback
 
     @gensim.utils.synchronous('lock_update')
     def buffer(self, *args, **kwargs):
@@ -900,7 +901,7 @@ class SessionServer(gensim.utils.SaveLoad):
             self.istable = 1 - self.istable
             self.write_istable()
             tmp.close() # don't wait for gc, release resources manually
-            self.lock_update.release()
+#            self.lock_update.release()
         else:
             logger.warning("commit called but there's no open session in %s" % self)
 
@@ -911,7 +912,7 @@ class SessionServer(gensim.utils.SaveLoad):
             logger.info("rolling back transaction in %s" % self)
             self.session.close()
             self.session = None
-            self.lock_update.release()
+#            self.lock_update.release()
         else:
             logger.warning("rollback called but there's no open session in %s" % self)
 
