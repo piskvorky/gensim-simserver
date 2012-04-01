@@ -48,6 +48,8 @@ SHARD_SIZE = 65536 # spill index shards to disk in SHARD_SIZE-ed chunks of docum
 
 JOURNAL_MODE = 'OFF' # don't keep journals in sqlite dbs
 
+
+
 def merge_sims(oldsims, newsims, clip=TOP_SIMS):
     """Merge two precomputed similarity lists, truncating the result to `clip` most similar items."""
     if oldsims is None:
@@ -231,6 +233,7 @@ class SimIndex(gensim.utils.SaveLoad):
         """Find the most similar documents to the (already indexed) document with `docid`."""
         result = self.id2sims.get(docid, None)
         if result is None:
+            self.qindex.num_best = self.topsims
             sims = self.qindex.similarity_by_id(self.id2pos[docid])
             result = self.sims2scores(sims)
         return result
@@ -243,6 +246,7 @@ class SimIndex(gensim.utils.SaveLoad):
         if normalize is None:
             normalize = self.qindex.normalize
         norm, self.qindex.normalize = self.qindex.normalize, normalize # store old value
+        self.qindex.num_best = self.topsims
         sims = self.qindex[vec]
         self.qindex.normalize = norm # restore old value of qindex.normalize
         return self.sims2scores(sims)
