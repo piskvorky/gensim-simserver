@@ -47,10 +47,15 @@ TL;DR: **simserver is open-source, but you have to contact me for any proprietar
 History
 -------------
 
+0.1.4:
+  * performance improvements to sharding
+  * change to threading model -- removed restriction on per-thread session access
+  * bug fix in index optimize()
+
 0.1.3: 
   * changed behaviour for very few training documents: instead of latent semantic analysis, use simpler log-entropy model
   * fixed bug with leaking SQLite file descriptors
 
 -------------
 
-Copyright (c) 2011 Radim Rehurek
+Copyright (c) 2009-2012 Radim Rehurek

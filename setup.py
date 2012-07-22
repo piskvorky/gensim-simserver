@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
-# Copyright (C) 2011 Radim Rehurek <radimrehurek@seznam.cz>
+# Copyright (C) 2012 Radim Rehurek <radimrehurek@seznam.cz>
 # Licensed under the GNU AGPL v3.0 - http://www.gnu.org/licenses/agpl.html
 
 """
@@ -28,7 +28,7 @@ def read(fname):
 
 setup(
     name = 'simserver',
-    version = '0.1.3',
+    version = '0.1.4',
     description = 'Document similarity server',
     long_description = read('README.rst'),
 
@@ -64,7 +64,7 @@ setup(
     test_suite = "simserver.test",
 
     install_requires = [
-        'gensim >= 0.8.3',
+        'gensim >= 0.8.5',
         'Pyro4 >= 4.8',
         'sqlitedict >= 1.0.8',
     ],

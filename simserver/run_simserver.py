@@ -11,7 +11,7 @@ USAGE: %(program)s DATA_DIRECTORY
 as a daemon.
 
 Example:
-    python -m gensim.test.run_simserver /tmp/server
+    python -m simserver.run_simserver /tmp/server
 """
 
 from __future__ import with_statement
