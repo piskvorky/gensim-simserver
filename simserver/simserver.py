@@ -40,9 +40,9 @@ logger = logging.getLogger('gensim.similarities.simserver')
 
 
 
-MODEL_METHOD = 'lsi' # use LSI to represent documents
+MODEL_METHOD = 'lda' # use LDA to represent documents
 #MODEL_METHOD = 'tfidf'
-LSI_TOPICS = 400
+NUM_TOPICS = 400
 TOP_SIMS = 100 # when precomputing similarities, only consider this many "most similar" documents
 SHARD_SIZE = 65536 # spill index shards to disk in SHARD_SIZE-ed chunks of documents
 
@@ -355,13 +355,17 @@ class SimModel(gensim.utils.SaveLoad):
             self.tfidf = gensim.models.TfidfModel(corpus(), id2word=self.dictionary)
             logger.info("training LSI model")
             tfidf_corpus = self.tfidf[corpus()]
-            self.lsi = gensim.models.LsiModel(tfidf_corpus, id2word=self.dictionary, num_topics=LSI_TOPICS)
+            self.lsi = gensim.models.LsiModel(tfidf_corpus, id2word=self.dictionary, num_topics=NUM_TOPICS)
             self.lsi.projection.u = self.lsi.projection.u.astype(numpy.float32) # use single precision to save mem
             self.num_features = len(self.lsi.projection.s)
         elif method == 'logentropy':
             logger.info("training a log-entropy model")
             self.logent = gensim.models.LogEntropyModel(list(corpus()), id2word=self.dictionary)
             self.num_features = len(self.dictionary)
+        elif method == 'lda':
+            logger.info("training LDA model")
+            self.lda = gensim.models.LdaModel(corpus(), id2word=self.dictionary, num_topics=NUM_TOPICS)
+            self.num_features = NUM_TOPICS
         else:
             msg = "unknown semantic method %s" % method
             logger.error(msg)
@@ -376,6 +380,9 @@ class SimModel(gensim.utils.SaveLoad):
         elif self.method == 'logentropy':
             bow = self.dictionary.doc2bow(doc['tokens'])
             return self.logent[bow]
+        elif self.method == 'lda':
+            bow = self.dictionary.doc2bow(doc['tokens'])
+            return self.lda[bow]
 
 
     def docs2vecs(self, docs):
@@ -386,6 +393,9 @@ class SimModel(gensim.utils.SaveLoad):
         elif self.method == 'logentropy':
             bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
             return self.logent[bows]
+        elif self.method == 'lda':
+            bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
+            return self.lda[bows]
 
 
     def close(self):
