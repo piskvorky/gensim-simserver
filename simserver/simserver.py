@@ -57,7 +57,7 @@ def merge_sims(oldsims, newsims, clip=TOP_SIMS):
     elif newsims is None:
         result = oldsims
     else:
-        result = sorted(oldsims + newsims, key=lambda item:-item[1])
+        result = sorted(oldsims + newsims, key=lambda item: -item[1])
     return result[: clip]
 
 
@@ -423,23 +423,28 @@ class SimServer(object):
         if not os.path.isdir(basename):
             raise ValueError("%r must be a writable directory" % basename)
         self.basename = basename
+        self.use_locks = use_locks
         self.lock_update = threading.RLock() if use_locks else gensim.utils.nocm
         try:
-            self.fresh_index = SimIndex.load(self.location('index_fresh'))
+            loc = self.location('index_fresh')
+            self.fresh_index = SimIndex.load(loc)
+            self.fresh_index.check_moved(loc)
         except:
+            logger.info("starting a new fresh index (couldn't load existing from %s )" % loc)
             self.fresh_index = None
         try:
-            self.opt_index = SimIndex.load(self.location('index_opt'))
+            loc = self.location('index_opt')
+            self.opt_index = SimIndex.load(loc)
+            self.opt_index.check_moved(loc)
         except:
+            logger.info("starting a new optimized index (couldn't load existing from %s )" % loc)
             self.opt_index = None
         try:
             self.model = SimModel.load(self.location('model'))
         except:
             self.model = None
         self.payload = SqliteDict(self.location('payload'), autocommit=True, journal_mode=JOURNAL_MODE)
-        # save the opened objects right back. this is not necessary and costs extra
-        # time, but is cleaner when there are server location changes (see `check_moved`).
-        self.flush(save_index=True, save_model=True, clear_buffer=True)
+        self.flush(save_index=False, save_model=False, clear_buffer=True)
         logger.info("loaded %s" % self)
 
 
@@ -571,7 +576,7 @@ class SimServer(object):
             self.buffer(corpus)
 
         if not self.fresh_docs:
-            msg = "index called but no training corpus specified for %s" % self
+            msg = "index called but no indexing corpus specified for %s" % self
             logger.error(msg)
             raise ValueError(msg)
 
@@ -633,8 +638,9 @@ class SimServer(object):
             self.model.close()
             fname = self.location('model')
             try:
-                os.remove(fname)
-                logger.info("deleted %s" % fname)
+                if os.path.exists(fname):
+                    os.remove(fname)
+                    logger.info("deleted %s" % fname)
             except Exception, e:
                 logger.warning("failed to delete %s" % fname)
             self.model = None
@@ -652,7 +658,7 @@ class SimServer(object):
 
 
     def is_locked(self):
-        return self.lock_update._RLock__count > 0
+        return self.use_locks and self.lock_update._RLock__count > 0
 
 
     def find_similar(self, doc, min_score=0.0, max_results=100):
@@ -836,7 +842,7 @@ class SessionServer(gensim.utils.SaveLoad):
                     (self.loc_stable, self.loc_session))
         shutil.copytree(self.loc_stable, self.loc_session)
         self.session = SimServer(self.loc_session, use_locks=self.use_locks)
-        #self.lock_update.acquire() # no other thread can call any modification methods until commit/rollback
+        self.lock_update.acquire() # no other thread can call any modification methods until commit/rollback
 
     @gensim.utils.synchronous('lock_update')
     def buffer(self, *args, **kwargs):
@@ -905,7 +911,7 @@ class SessionServer(gensim.utils.SaveLoad):
             self.istable = 1 - self.istable
             self.write_istable()
             tmp.close() # don't wait for gc, release resources manually
-#            self.lock_update.release()
+            self.lock_update.release()
         else:
             logger.warning("commit called but there's no open session in %s" % self)
 
@@ -916,7 +922,7 @@ class SessionServer(gensim.utils.SaveLoad):
             logger.info("rolling back transaction in %s" % self)
             self.session.close()
             self.session = None
-#            self.lock_update.release()
+            self.lock_update.release()
         else:
             logger.warning("rollback called but there's no open session in %s" % self)
 
