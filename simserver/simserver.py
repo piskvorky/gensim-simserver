@@ -39,13 +39,9 @@ from sqlitedict import SqliteDict # needs sqlitedict: run "sudo easy_install sql
 logger = logging.getLogger('gensim.similarities.simserver')
 
 
-
-MODEL_METHOD = 'lsi' # use LSI to represent documents
-#MODEL_METHOD = 'tfidf'
-LSI_TOPICS = 400
 TOP_SIMS = 100 # when precomputing similarities, only consider this many "most similar" documents
 SHARD_SIZE = 65536 # spill index shards to disk in SHARD_SIZE-ed chunks of documents
-
+DEFAULT_NUM_TOPICS = 400 # use this many topics for topic models unless user specified a value
 JOURNAL_MODE = 'OFF' # don't keep journals in sqlite dbs
 
 
@@ -92,26 +88,19 @@ class SimIndex(gensim.utils.SaveLoad):
     @staticmethod
     def load(fname):
         result = gensim.utils.SaveLoad.load(fname)
-        result.check_moved(fname)
-        result.id2sims = SqliteDict(result.fname + '.id2sims', journal_mode=JOURNAL_MODE)
+        result.fname = fname
+        result.check_moved()
+        result.id2sims = SqliteDict(fname + '.id2sims', journal_mode=JOURNAL_MODE)
         return result
 
 
-    def check_moved(self, fname):
-        # Add extra logic to loading: if the location on filesystem changed,
-        # update locations of all shard files.
-        # The other option was making shard locations relative to a directory name.
-        # That way we wouldn't have to update their locations on load, but on the
-        # other hand we'd have to pass a dirname to each call that needs their
-        # absolute location... annoying.
-        if self.fname != fname:
+    def check_moved(self):
+        output_prefix = self.fname + '.idx'
+        if self.qindex.output_prefix != output_prefix:
             logger.info("index seems to have moved from %s to %s; updating locations" %
-                        (self.fname, fname))
-            self.fname = fname
-            output_prefix = fname + '.idx'
-            for shard in self.qindex.shards:
-                shard.fname = shard.fname.replace(self.qindex.output_prefix, output_prefix, 1)
+                (self.qindex.output_prefix, output_prefix))
             self.qindex.output_prefix = output_prefix
+            self.qindex.check_moved()
 
 
     def close(self):
@@ -323,7 +312,7 @@ class SimModel(gensim.utils.SaveLoad):
     These vectors can then be indexed/queried for similarity, see the `SimIndex`
     class. Used internally by `SimServer`.
     """
-    def __init__(self, fresh_docs, dictionary=None, method=MODEL_METHOD):
+    def __init__(self, fresh_docs, dictionary=None, method=None, params=None):
         """
         Train a model, using `fresh_docs` as training corpus.
 
@@ -333,34 +322,59 @@ class SimModel(gensim.utils.SaveLoad):
         """
         # FIXME TODO: use subclassing/injection for different methods, instead of param..
         self.method = method
+        if params is None:
+            params = {}
+        self.params = params
         logger.info("collecting %i document ids" % len(fresh_docs))
         docids = fresh_docs.keys()
         logger.info("creating model from %s documents" % len(docids))
-        preprocessed = lambda : (fresh_docs[docid]['tokens'] for docid in docids)
+        preprocessed = lambda: (fresh_docs[docid]['tokens'] for docid in docids)
 
         # create id->word (integer->string) mapping
         logger.info("creating dictionary from %s documents" % len(docids))
         if dictionary is None:
-            self.dictionary = gensim.corpora.Dictionary(preprocessed())
+            dictionary = gensim.corpora.Dictionary(preprocessed())
             if len(docids) >= 1000:
-                self.dictionary.filter_extremes(no_below=5, no_above=0.2, keep_n=50000)
+                dictionary.filter_extremes(no_below=5, no_above=0.2, keep_n=50000)
             else:
                 logger.warning("training model on only %i documents; is this intentional?" % len(docids))
-                self.dictionary.filter_extremes(no_below=0, no_above=1.0, keep_n=50000)
-        else:
-            self.dictionary = dictionary
-        corpus = lambda: (self.dictionary.doc2bow(tokens) for tokens in preprocessed())
+                dictionary.filter_extremes(no_below=0, no_above=1.0, keep_n=50000)
+        self.dictionary = dictionary
+
+        class IterableCorpus(object):
+            def __iter__(self):
+                for tokens in preprocessed():
+                    yield dictionary.doc2bow(tokens)
+
+            def __len__(self):
+                return len(docids)
+        corpus = IterableCorpus()
+
         if method == 'lsi':
             logger.info("training TF-IDF model")
-            self.tfidf = gensim.models.TfidfModel(corpus(), id2word=self.dictionary)
+            self.tfidf = gensim.models.TfidfModel(corpus, id2word=self.dictionary)
             logger.info("training LSI model")
-            tfidf_corpus = self.tfidf[corpus()]
-            self.lsi = gensim.models.LsiModel(tfidf_corpus, id2word=self.dictionary, num_topics=LSI_TOPICS)
+            tfidf_corpus = self.tfidf[corpus]
+            self.lsi = gensim.models.LsiModel(tfidf_corpus, id2word=self.dictionary, **params)
             self.lsi.projection.u = self.lsi.projection.u.astype(numpy.float32) # use single precision to save mem
             self.num_features = len(self.lsi.projection.s)
+        elif method == 'lda_tfidf':
+            logger.info("training TF-IDF model")
+            self.tfidf = gensim.models.TfidfModel(corpus, id2word=self.dictionary)
+            logger.info("training LSI model")
+            tfidf_corpus = self.tfidf[corpus]
+            self.lda = gensim.models.LdaModel(tfidf_corpus, id2word=self.dictionary, **params)
+            self.num_features = self.lda.num_topics
+        elif method == 'lda':
+            logger.info("training TF-IDF model")
+            self.tfidf = gensim.models.TfidfModel(corpus, id2word=self.dictionary)
+            logger.info("training LSI model")
+            tfidf_corpus = self.tfidf[corpus]
+            self.lda = gensim.models.LdaModel(corpus, id2word=self.dictionary, **params)
+            self.num_features = self.lda.num_topics
         elif method == 'logentropy':
             logger.info("training a log-entropy model")
-            self.logent = gensim.models.LogEntropyModel(list(corpus()), id2word=self.dictionary)
+            self.logent = gensim.models.LogEntropyModel(corpus, id2word=self.dictionary, **params)
             self.num_features = len(self.dictionary)
         else:
             msg = "unknown semantic method %s" % method
@@ -370,21 +384,27 @@ class SimModel(gensim.utils.SaveLoad):
 
     def doc2vec(self, doc):
         """Convert a single SimilarityDocument to vector."""
+        bow = self.dictionary.doc2bow(doc['tokens'])
         if self.method == 'lsi':
-            bow = self.dictionary.doc2bow(doc['tokens'])
             return self.lsi[self.tfidf[bow]]
+        elif self.method == 'lda':
+            return self.lda[bow]
+        elif self.method == 'lda_tfidf':
+            return self.lda[self.tfidf[bow]]
         elif self.method == 'logentropy':
-            bow = self.dictionary.doc2bow(doc['tokens'])
             return self.logent[bow]
 
 
     def docs2vecs(self, docs):
         """Convert multiple SimilarityDocuments to vectors (batch version of doc2vec)."""
+        bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
         if self.method == 'lsi':
-            bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
             return self.lsi[self.tfidf[bows]]
+        elif self.method == 'lda':
+            return self.lda[bows]
+        elif self.method == 'lda_tfidf':
+            return self.lda[self.tfidf[bows]]
         elif self.method == 'logentropy':
-            bows = (self.dictionary.doc2bow(doc['tokens']) for doc in docs)
             return self.logent[bows]
 
 
@@ -528,7 +548,7 @@ class SimServer(object):
 
 
     @gensim.utils.synchronous('lock_update')
-    def train(self, corpus=None, method='auto', clear_buffer=True):
+    def train(self, corpus=None, method='auto', clear_buffer=True, params=None):
         """
         Create an indexing model. Will overwrite the model if it already exists.
         All indexes become invalid, because documents in them use a now-obsolete
@@ -552,7 +572,9 @@ class SimServer(object):
                 method = 'logentropy'
             else:
                 method = 'lsi'
-        self.model = SimModel(self.fresh_docs, method=method)
+        if params is None:
+            params = {}
+        self.model = SimModel(self.fresh_docs, method=method, params=params)
         self.flush(save_model=True, clear_buffer=clear_buffer)
 
 
