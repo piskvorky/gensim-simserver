@@ -432,7 +432,7 @@ class SimServer(object):
     processes is safe for reading = answering similarity queries. Modifying
     (training/indexing) is realized via locking = serialized internally.
     """
-    def __init__(self, basename, use_locks=True):
+    def __init__(self, basename, use_locks=False):
         """
         All data will be stored under directory `basename`. If there is a server
         there already, it will be loaded (resumed).
@@ -446,18 +446,14 @@ class SimServer(object):
         self.use_locks = use_locks
         self.lock_update = threading.RLock() if use_locks else gensim.utils.nocm
         try:
-            loc = self.location('index_fresh')
-            self.fresh_index = SimIndex.load(loc)
-            self.fresh_index.check_moved(loc)
+            self.fresh_index = SimIndex.load(self.location('index_fresh'))
         except:
-            logger.info("starting a new fresh index (couldn't load existing from %s )" % loc)
+            logger.debug("starting a new fresh index")
             self.fresh_index = None
         try:
-            loc = self.location('index_opt')
-            self.opt_index = SimIndex.load(loc)
-            self.opt_index.check_moved(loc)
+            self.opt_index = SimIndex.load(self.location('index_opt'))
         except:
-            logger.info("starting a new optimized index (couldn't load existing from %s )" % loc)
+            logger.debug("starting a new optimized index")
             self.opt_index = None
         try:
             self.model = SimModel.load(self.location('model'))
@@ -681,6 +677,12 @@ class SimServer(object):
 
     def is_locked(self):
         return self.use_locks and self.lock_update._RLock__count > 0
+
+
+    def vec_by_id(self, docid):
+        for index in [self.opt_index, self.fresh_index]:
+            if index is not None and docid in index:
+                return index.vec_by_id(docid)
 
 
     def find_similar(self, doc, min_score=0.0, max_results=100):
