@@ -719,8 +719,12 @@ class SimServer(object):
             else:
                 raise ValueError("document %r not in index" % docid)
         else:
-            # query by an arbitrary text (=tokens) inside doc['tokens']
-            vec = self.model.doc2vec(doc) # convert document (text) to vector
+            if 'topics' in doc:
+                # user supplied vector directly => use that
+                vec = gensim.matutils.any2sparse(doc['topics'])
+            else:
+                # query by an arbitrary text (=tokens) inside doc['tokens']
+                vec = self.model.doc2vec(doc) # convert document (text) to vector
             if self.opt_index is not None:
                 sims_opt = self.opt_index.sims_by_vec(vec)
             if self.fresh_index is not None:
