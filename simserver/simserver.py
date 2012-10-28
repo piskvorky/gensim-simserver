@@ -648,10 +648,27 @@ class SimServer(object):
         """Drop all indexed documents. If `keep_model` is False, also dropped the model."""
         modelstr = "" if keep_model else "and model "
         logger.info("deleting similarity index " + modelstr + "from %s" % self.basename)
+
+        # delete indexes
         for index in [self.fresh_index, self.opt_index]:
             if index is not None:
                 index.terminate()
         self.fresh_index, self.opt_index = None, None
+
+        # delete payload
+        if self.payload is not None:
+            self.payload.close()
+
+            fname = self.location('payload')
+            try:
+                if os.path.exists(fname):
+                    os.remove(fname)
+                    logger.info("deleted %s" % fname)
+            except Exception, e:
+                logger.warning("failed to delete %s" % fname)
+        self.payload = SqliteDict(self.location('payload'), autocommit=True, journal_mode=JOURNAL_MODE)
+
+        # optionally, delete the model as well
         if not keep_model and self.model is not None:
             self.model.close()
             fname = self.location('model')
