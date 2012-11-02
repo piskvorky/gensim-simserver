@@ -361,15 +361,13 @@ class SimModel(gensim.utils.SaveLoad):
         elif method == 'lda_tfidf':
             logger.info("training TF-IDF model")
             self.tfidf = gensim.models.TfidfModel(corpus, id2word=self.dictionary)
-            logger.info("training LSI model")
-            tfidf_corpus = self.tfidf[corpus]
-            self.lda = gensim.models.LdaModel(tfidf_corpus, id2word=self.dictionary, **params)
+            logger.info("training LDA model")
+            self.lda = gensim.models.LdaModel(self.tfidf[corpus], id2word=self.dictionary, **params)
             self.num_features = self.lda.num_topics
         elif method == 'lda':
             logger.info("training TF-IDF model")
             self.tfidf = gensim.models.TfidfModel(corpus, id2word=self.dictionary)
-            logger.info("training LSI model")
-            tfidf_corpus = self.tfidf[corpus]
+            logger.info("training LDA model")
             self.lda = gensim.models.LdaModel(corpus, id2word=self.dictionary, **params)
             self.num_features = self.lda.num_topics
         elif method == 'logentropy':
@@ -406,6 +404,15 @@ class SimModel(gensim.utils.SaveLoad):
             return self.lda[self.tfidf[bows]]
         elif self.method == 'logentropy':
             return self.logent[bows]
+
+
+    def get_tfidf(self, doc):
+        bow = self.dictionary.doc2bow(doc['tokens'])
+        if hasattr(self, 'tfidf'):
+            return self.tfidf[bow]
+        if hasattr(self, 'logent'):
+            return self.logent[bow]
+        raise ValueError("model must contain either TF-IDF or LogEntropy transformation")
 
 
     def close(self):
@@ -770,6 +777,11 @@ class SimServer(object):
         return any(index is not None and docid in index
                    for index in [self.opt_index, self.fresh_index])
 
+
+    def get_tfidf(self, *args, **kwargs):
+        return self.model.get_tfidf(*args, **kwargs)
+
+
     def status(self):
         return str(self)
 
@@ -1029,6 +1041,14 @@ class SessionServer(gensim.utils.SaveLoad):
             # with autosession on, commit the pending transaction first
             self.commit()
         return self.stable.find_similar(*args, **kwargs)
+
+
+    def get_tfidf(self, *args, **kwargs):
+        if self.session is not None and self.autosession:
+            # with autosession on, commit the pending transaction first
+            self.commit()
+        return self.stable.get_tfidf(*args, **kwargs)
+
 
     # add some functions for remote access (RPC via Pyro)
     def debug_model(self):
