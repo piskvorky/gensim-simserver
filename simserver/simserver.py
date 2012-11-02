@@ -46,7 +46,7 @@ JOURNAL_MODE = 'OFF' # don't keep journals in sqlite dbs
 
 
 
-def merge_sims(oldsims, newsims, clip=TOP_SIMS):
+def merge_sims(oldsims, newsims, clip=None):
     """Merge two precomputed similarity lists, truncating the result to `clip` most similar items."""
     if oldsims is None:
         result = newsims or []
@@ -54,7 +54,9 @@ def merge_sims(oldsims, newsims, clip=TOP_SIMS):
         result = oldsims
     else:
         result = sorted(oldsims + newsims, key=lambda item: -item[1])
-    return result[: clip]
+    if clip is not None:
+        result = result[:clip]
+    return result
 
 
 
@@ -255,7 +257,7 @@ class SimIndex(gensim.utils.SaveLoad):
                     # ignore masked entries (deleted, overwritten documents)
                     docid = self.pos2id[pos]
                     sims = self.sims2scores(sims)
-                    self.id2sims[docid] = merge_sims(self.id2sims[docid], sims)
+                    self.id2sims[docid] = merge_sims(self.id2sims[docid], sims, self.topsims)
                 pos += 1
                 if pos % 10000 == 0:
                     logger.info("PROGRESS: updated doc #%i/%i" % (pos, lenself))
@@ -615,7 +617,7 @@ class SimServer(object):
         for docid in self.fresh_docs:
             payload = self.fresh_docs[docid].get('payload', None)
             if payload is None:
-                # TODO HACK: exit on first doc without a payload (=assume all docs have payload, or none does)
+                # HACK: exit on first doc without a payload (=assume all docs have payload, or none does)
                 break
             self.payload[docid] = payload
         self.flush(save_index=True, clear_buffer=clear_buffer)
@@ -711,15 +713,18 @@ class SimServer(object):
 
     def find_similar(self, doc, min_score=0.0, max_results=100):
         """
-        Find at most `max_results` most similar articles in the index,
-        each having similarity score of at least `min_score`.
+        Find `max_results` most similar articles in the index, each having similarity
+        score of at least `min_score`. The resulting list may be shorter than `max_results`,
+        in case there are not enough matching documents.
 
-        `doc` is either a string (document id, previously indexed) or a
+        `doc` is either a string (=document id, previously indexed) or a
         dict containing a 'tokens' key. These tokens are processed to produce a
-        vector, which is then used as a query.
+        vector, which is then used as a query against the index.
 
         The similar documents are returned in decreasing similarity order, as
-        (doc_id, doc_score) pairs.
+        `(doc_id, similarity_score, doc_payload)` 3-tuples. The payload returned
+        is identical to what was supplied for this document during indexing.
+
         """
         logger.debug("received query call with %r" % doc)
         if self.is_locked():
@@ -727,6 +732,9 @@ class SimServer(object):
             logger.error(msg)
             raise RuntimeError(msg)
         sims_opt, sims_fresh = None, None
+        for index in [self.fresh_index, self.opt_index]:
+            if index is not None:
+                index.topsims = max_results
         if isinstance(doc, basestring):
             # query by direct document id
             docid = doc
@@ -754,8 +762,11 @@ class SimServer(object):
             if self.fresh_index is not None:
                 sims_fresh = self.fresh_index.sims_by_vec(vec)
 
+        merged = merge_sims(sims_opt, sims_fresh)
+        logger.debug("got %s raw similars, pruning with max_results=%s, min_score=%s" %
+            (len(merged), max_results, min_score))
         result = []
-        for docid, score in merge_sims(sims_opt, sims_fresh):
+        for docid, score in merged:
             if score < min_score or 0 < max_results <= len(result):
                 break
             result.append((docid, float(score), self.payload.get(docid, None)))
